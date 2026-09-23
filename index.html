@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#071016">
+  <title>ChemoSim — E. coli chemotaxis simulator</title>
+  <meta name="description" content="Explore E. coli chemotaxis with conserved protein pools, stochastic motors and condition-specific calibration. Model assumptions and limitations are documented.">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="research.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">CS</span><span>ChemoSim</span><em>MODEL 0.6</em></div>
+    <div class="top-actions">
+      <button id="resetBtn" class="ghost-btn" type="button">標準条件に戻す</button>
+      <button id="runBtn" class="primary-btn" type="button" title="同一条件で新しい確率的切替系列を生成"><span>↻</span> 確率過程を再試行</button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <aside class="controls-panel">
+      <section>
+        <div class="section-head"><h1>実験条件</h1><span class="status"><i></i> LIVE</span></div>
+        <p class="helper">タンパク質量を野生型比で変更します。</p>
+        <div id="proteinControls" class="control-list"></div>
+      </section>
+
+      <section class="stimulus-section">
+        <h2>刺激</h2>
+        <label class="select-label" for="ligandSelect">刺激物質</label>
+        <select id="ligandSelect">
+          <optgroup label="誘引物質">
+            <option value="asp">Aspartate / Tar</option>
+            <option value="ser">Serine / Tsr</option>
+          </optgroup>
+          <optgroup label="忌避物質">
+            <option value="ni">Nickel (Ni²⁺) / Tar</option>
+            <option value="co">Cobalt (Co²⁺) / Tar</option>
+          </optgroup>
+        </select>
+        <div class="slider-row compact">
+          <div class="slider-meta"><label for="ligand">添加後濃度</label><output id="ligandOut">10 µM</output></div>
+          <input id="ligand" type="range" min="0" max="100" value="10" step="1">
+        </div>
+        <div class="slider-row compact">
+          <div class="slider-meta"><label for="stepTime">添加時刻</label><output id="stepTimeOut">5 s</output></div>
+          <input id="stepTime" type="range" min="0" max="30" value="5" step="1">
+        </div>
+      </section>
+
+      <section class="motor-parameter-section">
+        <h2>モーター特性</h2>
+        <p class="helper">CheY-Pのモーターからの解離しやすさを変更します。</p>
+        <div class="slider-row compact">
+          <div class="slider-meta">
+            <label for="motorInstability">CheY-P結合の不安定性<span>相対 k<sub>off</sub></span></label>
+            <output id="motorInstabilityOut">1.00×</output>
+          </div>
+          <input id="motorInstability" type="range" min="0" max="200" value="100" step="1">
+          <div class="range-ends"><span>安定 0.25×</span><span>不安定 4.00×</span></div>
+        </div>
+      </section>
+
+      <section class="preset-section">
+        <h2>比較プリセット</h2>
+        <div class="preset-grid">
+          <button data-preset="wt" class="preset active">WT</button>
+          <button data-preset="cheZlow" class="preset">CheZ↓</button>
+          <button data-preset="cheYhigh" class="preset">CheY↑</button>
+          <button data-preset="adaptOff" class="preset">適応欠損</button>
+        </div>
+      </section>
+    </aside>
+
+    <section class="results-panel">
+      <div class="pathway-card">
+        <div class="card-head">
+          <div><span class="eyebrow">SIGNAL FLOW</span><h2>走化性シグナル伝達</h2></div>
+          <span id="phenotypeBadge" class="phenotype">適応応答</span>
+        </div>
+        <div class="pathway" aria-label="受容体からべん毛モーターまでのシグナル経路">
+          <article class="node receptor"><small>INPUT</small><strong>Tar / Tsr</strong><span id="receptorValue">0.50</span><b>受容体活性</b></article>
+          <div class="arrow"><span>CheR / CheB</span>→</div>
+          <article class="node kinase"><small>KINASE</small><strong>CheA-P</strong><span id="cheAPValue">0.50</span><b>相対活性</b></article>
+          <div class="arrow"><span>リン酸転移</span>→</div>
+          <article class="node response"><small>RESPONSE</small><strong>CheY-P</strong><span id="cheYPValue">3.0</span><b>µM</b></article>
+          <div class="arrow"><span>FliM結合</span>→</div>
+          <article class="node motor"><small>OUTPUT</small><strong>Motor</strong><span id="cwValue">0.20</span><b>CW bias</b></article>
+        </div>
+      </div>
+
+      <div class="metrics-grid">
+        <article class="metric"><span>応答ピーク</span><strong id="peakMetric">—</strong><small>CheY-P</small></article>
+        <article class="metric"><span>応答時間</span><strong id="responseMetric">—</strong><small>90% peak</small></article>
+        <article class="metric"><span>適応誤差</span><strong id="adaptMetric">—</strong><small>vs. 刺激前</small></article>
+        <article class="metric accent"><span>Tumble時間率</span><strong id="tumbleMetric">—</strong><small>40–60 s</small></article>
+      </div>
+
+      <article class="cell-card">
+        <div class="card-head cell-head">
+          <div><span class="eyebrow">CELL VIEW</span><h2>大腸菌内シグナルとモーター反転</h2></div>
+          <div class="cell-readouts">
+            <span><i id="stimulusDot" class="dot ligand-dot"></i><span id="stimulusKindLabel">誘引</span> <strong id="cgLigand">0 µM</strong></span>
+            <span><i class="dot yp-dot"></i>CheY-P <strong id="cgCheYP">—</strong></span>
+            <span><i class="dot motor-dot"></i>Ensemble CW <strong id="cgCW">—</strong></span>
+            <span><i class="dot bundle-dot"></i>べん毛束 <strong id="bundleState">形成</strong></span>
+          </div>
+        </div>
+        <div class="cell-stage">
+          <canvas id="cellScene" role="img" aria-label="大腸菌内のCheY-P濃度とべん毛モーター回転を表すCGアニメーション"></canvas>
+          <div class="scene-key">
+            <span><i class="key-receptor"></i>極性受容体クラスター</span><span><i class="key-chea"></i>CheA-P</span><span><i class="key-chey"></i>CheY-P</span><span><i class="key-chez"></i>CheZ</span><span><i class="key-bundle"></i>べん毛束</span>
+          </div>
+        </div>
+        <div class="playback">
+          <button id="playPause" class="play-button" type="button" aria-label="アニメーションを一時停止">Ⅱ</button>
+          <output id="playTime">0.0 s</output>
+          <input id="timeScrubber" type="range" min="0" max="300" value="0" step="1" aria-label="シミュレーション時刻">
+          <span>60 s</span>
+          <label><input id="slowMotion" type="checkbox"> 低速再生</label>
+        </div>
+      </article>
+
+      <div class="analysis-grid">
+        <article class="chart-card">
+          <div class="card-head chart-head">
+            <div><span class="eyebrow">TIME COURSE</span><h2>細胞内シグナル</h2></div>
+            <div class="legend"><span class="l-chey">CheY-P</span><span class="l-cw">Ensemble CW probability</span><span class="l-input">刺激</span></div>
+          </div>
+          <div class="canvas-wrap"><canvas id="signalChart" role="img" aria-label="CheY-PとCW biasの時系列グラフ"></canvas></div>
+        </article>
+
+        <article class="motor-card">
+          <div class="card-head"><div><span class="eyebrow">MOTOR ARRAY</span><h2>べん毛モーター</h2></div><span id="behaviorState" class="behavior run">RUN</span></div>
+          <div id="motorArray" class="motor-array"></div>
+          <div class="motor-summary"><span>CCW / run</span><div class="bias-track"><i id="biasFill"></i></div><span>CW / tumble</span></div>
+          <div class="motor-kinetics"><span>CheY-P相対解離速度 <strong id="motorKoffReadout">1.00×</strong></span><span>相対結合寿命 <strong id="motorLifetimeReadout">1.00×</strong></span></div>
+          <canvas id="trajectory" class="trajectory" role="img" aria-label="細胞運動軌跡"></canvas>
+        </article>
+      </div>
+
+      <article class="sensitivity-card">
+        <div class="card-head"><div><span class="eyebrow">LOCAL SENSITIVITY</span><h2>定常CW biasへの寄与</h2></div><small>各因子を単独で+10%変化</small></div>
+        <div id="sensitivityBars" class="sensitivity-bars"></div>
+      </article>
+
+
+    </section>
+  </main>
+  <script src="engine.js"></script>
+  <script src="upstream.js"></script>
+  <script src="app.js"></script>
+  <script src="research.js"></script>
+  <script src="motor-fit.js"></script>
+  <script src="calibration.js"></script>
+  <script src="upstream-ui.js"></script>
+</body>
+</html>
